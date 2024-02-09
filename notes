@@ -1,0 +1,4 @@
+install spotipy
+install google sheets api
+make environment variables through windows
+install live server vscode extension and run it before using this
