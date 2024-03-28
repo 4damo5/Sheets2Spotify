@@ -13,3 +13,7 @@ Make sure in the Google API that you add your email as a tester or release the a
 Set the SPREADSHEET_ID, PLAYLIST_ID, USERNAME variables to your own and run the code, it should take care of the rest when it runs.
 
 Note: When you first run the script you may get a Spotify and Google Pop-up asking you to accept permissions, this is so the app can work.
+
+Future Improvement?:
+
+Maybe integrate Google App Script and a server to indicate when the spreadsheet changes rather than auto checking over a certain interval of time
