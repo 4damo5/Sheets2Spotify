@@ -117,9 +117,7 @@ song_uris, new_start, new_end, song_names = get_spreadsheet_tracks(SPREADSHEET_I
 #Adds songs continuously every 60 seconds, should change to maybe 10 minutes
 while True:
     #maps song names to uris; this is used more for debugging and visualization
-    song_dict = {}
-    for i in range(len(song_uris)):
-        song_dict[song_uris[i]] = song_names[i]
+    song_dict = {song_dict[song_uris[i]]: song_names[i] for i in range(len(song_uris))}
 
     #calling the playlist function to get the songs from the playlist
     playlist_songs = get_playlist_tracks(PLAYLIST_ID)
