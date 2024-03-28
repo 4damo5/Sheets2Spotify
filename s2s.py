@@ -1,123 +1,144 @@
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
-import time as t
+from Google import Create_Service
 import spotipy as sp
 from spotipy.oauth2 import SpotifyOAuth
-import pandas as pd
+import time
 
-SERVICE_ACCOUNT_FILE = 'key.json' #you need to make your own google api for this
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+#Disclaimers:
+#If you send too many requests to Spotify it will lock you out for 13 hours
+#If you send too many requests to Google it will lock you out for ~60-100 seconds
 
-creds = None
-creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES) #make sure to make spotify api details environment variables on your pc
-
-# If modifying these scopes, delete the file token.json.
-
+#Google Stuff
+CLIENT_SECRET_FILE = 'key.json' #you need to make your own google api for this
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+API_NAME = 'sheets'
+API_VERSION = 'v4'
 
 # The ID and range of a sample spreadsheet.
-SPREADSHEET_ID = "YOUR-SPREADSHEET-ID" # change depending on sheet make sure to share with api email
-RESPONSES = 'songs!' #REMEMBER TO CHANGE THE NAME OF THE RESPONSES IN THE SPREADSHEET TO songs
-COLUMN = 'B'
-START = '2' #Dont change
-END = '100'
+SPREADSHEET_ID = "ENTER-SPREADSHEET-ID" # change depending on sheet make sure to share with api email
 
-#spotipy vars
-PLAYLIST_ID = 'YOUR-PLAYLIST-ID' # find playlist id on spotify
+service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
+sheet = service.spreadsheets()
+
+#Spotify Stuff
+PLAYLIST_ID = 'ENTER-PLAYLIST-ID' # find playlist id on spotify
+USERNAME = 'ENTER-USERNAME' #check spotify profile for this
 
 scope = 'playlist-modify-public'
-username = 'YOUR-SPOTIFY-USERNAME'
 
-song_list = []
-playlist_songs = []
+spotifyObject = sp.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
-token = SpotifyOAuth(scope=scope,username=username)
-spotifyObject = sp.Spotify(auth_manager = token)
+#gets list of all playlist URIs
+def get_playlist_tracks(playlist_id):
+    #track songs in playlist
+    song_list = []
 
-#prePlaylist = spotifyObject.user_playlist(user=username)
-#playlist = prePlaylist['items'][0]['id']
+    #track offset
+    offset_var = 0
 
-service = build("sheets", "v4", credentials=creds)
+    #first batch of songs
+    TRACKS = spotifyObject.playlist_items(playlist_id, offset=0)
 
-# Call the Sheets API
-sheet = service.spreadsheets()
-result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range = RESPONSES + COLUMN + START + ':' + COLUMN + END).execute()
-values = result.get("values", [])
-df=pd.DataFrame(values)
-df_replace = df.replace([''],[None])
-searches = df_replace.values.tolist()
-print(searches)
+    #while the number of batches the loop runs through is less than the offset
+    while offset_var // 100 <= TRACKS['total'] // 100:
+        
+        #loops over the 100 songs queued in
+        for song in range(len(TRACKS['items'])):
+            #put the uri in the list
+            try:
+                song_list.append(TRACKS['items'][song]['track']['uri'])
 
-print(RESPONSES + COLUMN + START + ':' + COLUMN + END)
+            #if the song is invalid dont factor it in
+            except:
+                pass
+        
+        #queues into the next 100 songs
+        offset_var += 100
 
-def remove_all_dups():
-  j = 0
-  p = 0
-  while p < len(playlist_songs):
-    if playlist_songs.count(playlist_songs[p]) > 1:
-      while playlist_songs.count(playlist_songs[p]) > 1:
-        playlist_songs.remove(playlist_songs[p])
-      p+=1
-  print('no dup')
-  print(playlist_songs)
+        #changes tracks to the new queue batch
+        TRACKS = spotifyObject.playlist_items(playlist_id, offset=offset_var)
+    return song_list
 
-  while j < len(song_list):
-    #print('length'+str(len(song_list)))
-    if song_list.count(song_list[j]) > 1:
-      while song_list.count(song_list[j]) > 1:
-        print(j)
-        print(song_list)
-        song_list.remove(song_list[j])
-        if playlist_songs.count(song_list[j]) == 1:
-          song_list.remove(song_list[j])
-      j+=1
-  print('no dup')
-  print(song_list)
-  
+#gets list of all valid spreadsheet song entries
+def get_spreadsheet_tracks(spreadsheet_id, sheet_name = 'Form Responses 1', col_start = 'A', col_end = 'C', start = 2, end = 50, limit = 5):
+    #vars for collecting entry uris and song names
+    uris = []
+    names = []
 
+    #by default the range will be A2:C250 which gives enough breathing room for a decent sized playlist that will last a whole event
+    #for every run through this loop it will go through 50 entries (aside from the first loop)
+    for loops in range(limit):
+        #this is collecting the data from the spreadsheet into a variable "result"
+        result = sheet.values().get(
+            spreadsheetId = spreadsheet_id, 
+            range = sheet_name + '!' + col_start + str(start) + ':' + col_end + str(end) #should give something like A2:B50
+            ).execute()
+        
+        #For each entry collected...
+        for entry in range(end):
+            #try to search for the song in spotify
+            try:
+                #concatinating into the searching term; should look like "track: {song title} artist: {artist name}"
+                song_entry = 'track:' + result['values'][entry][1] + ' artist:' + result['values'][entry][2]
 
-i = 0
-while True: #keep going infinitely
-  result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, 
-                             range = RESPONSES + COLUMN + START + ':' + COLUMN + END).execute()
-  values = result.get("values", [])
-  df=pd.DataFrame(values)
-  df_replace = df.replace([''],[None])
-  searches = df_replace.values.tolist()
-  print(searches)
-  #appends all current playlist songs to the list playlist_songs
-  TRACKS = spotifyObject.user_playlist_tracks(user=username, playlist_id = PLAYLIST_ID, limit=50) #*******equals the songs in the playlist currently
-  for item in TRACKS['items']:
-    PLSONGS = item['track']
-    playlist_songs.append(PLSONGS['uri'])
-  print('playlist_songs')
-  print(playlist_songs)
+                #verifying that the current entry for the song title isn't blank
+                if result['values'][entry][1] != '': 
+                    #storing the search results in "SONG"
+                    SONG = spotifyObject.search(q = song_entry)
+                    
+                    #appending the name and uri of the current song to its respective lists
+                    uris.append(SONG['tracks']['items'][0]['uri'])
+                    names.append(SONG['tracks']['items'][0]['name'])
 
-  for item in range(len(searches)): #check every value in array
-    if len(searches) == 0: #if cell isnt blank
-      t.sleep(10)
-    else:  
-      SONG = spotifyObject.search(q=searches[item]) #search song
-      song_list.append(SONG['tracks']['items'][0]['uri']) #add song to song list
-      print(song_list)
-    #remove_all_dups()
-    '''
-    #if values[i] == '': #if the last cell isnt blank 
-    END = str(int(END)+1) #expand the range by 1 cell
-    START = str(int(START)+1)
-    print(RESPONSES + COLUMN + START + ':' + COLUMN + END)
-    '''
-    #print(i)
-  #print('dict')
-  print(list(dict.fromkeys(playlist_songs)))
-  final_song_list = set(song_list) - set(list(dict.fromkeys(playlist_songs*100)))
-  #print('final')
-  #print(type(final_song_list))
-  if final_song_list != set():
-    print(final_song_list)
-    spotifyObject.user_playlist_add_tracks(user=username, playlist_id = PLAYLIST_ID, tracks = list(final_song_list))
-  song_list.clear()
-  final_song_list.clear()
-  t.sleep(20) #delay after pinging spotipy
-  i = 0
-  
+            #if the song entry is blank or errors...
+            except:
+                #try to see if there is a spot for the timestamp
+                try:
+                    #if the timestamp isn't blank it will carry on
+                    #the point of this statement is that if a song is manually deleted on the sheet, that it won't error and just skip over it
+                    timestamp = result['values'][entry][0]
+                    if timestamp == '':
+                        return uris, start, end, names
+                    
+                #if it's just a blank row it'll return what it has
+                except:
+                    return uris, start, end, names
+        
+        #if everything is alright, it'll continue onto the next batch (might consider a delay if the API can't keep up)
+        start = end + 1
+        end += 50
+
+    #this last part is relevant if the API runs out of usage it can only do 100 per 100 secs
+    return uris, start, end, names 
+
+#calling the spreadsheet function for the first initial batch
+#this is necessary to acquire new_start and new_end
+song_uris, new_start, new_end, song_names = get_spreadsheet_tracks(SPREADSHEET_ID)
+
+#Adds songs continuously every 60 seconds, should change to maybe 10 minutes
+while True:
+    #maps song names to uris; this is used more for debugging and visualization
+    song_dict = {}
+    for i in range(len(song_uris)):
+        song_dict[song_uris[i]] = song_names[i]
+
+    #calling the playlist function to get the songs from the playlist
+    playlist_songs = get_playlist_tracks(PLAYLIST_ID)
+
+    #the actual names of the songs added to the playlist
+    names_added = [song_dict[entry] for entry in song_uris if entry not in playlist_songs]
+
+    #the uris of the songs added to the playlist
+    uris = [entry for entry in song_uris if entry not in playlist_songs]
+    
+    #leaving this up so that you can see what is added each loop
+    print('added', names_added)
+
+    #actually adding the songs to the playlist
+    if len(uris) != 0:
+        spotifyObject.user_playlist_add_tracks(user= USERNAME, playlist_id = PLAYLIST_ID, tracks = uris)
+
+    #delay over each loop, change depending on use
+    time.sleep(60)        
+
+    #getting the new spreadsheet entries where it left off 
+    song_entries, new_start, new_end, song_names = get_spreadsheet_tracks(SPREADSHEET_ID, start = new_start, end = new_end)
